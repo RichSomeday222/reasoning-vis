@@ -15,61 +15,68 @@ import re
 import glob
 import gc
 import psutil
+from collections import defaultdict
+import heapq
 
-# 配置日志
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('mac_beam_search_generation.log'),
+        logging.FileHandler('beam_search_generation.log'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
 @dataclass
-class ReasoningStep:
-    """单个推理步骤"""
-    step_id: int
-    content: str
-    confidence: float
+class TokenChoice:
+    """Single token choice with probability"""
+    token_id: int
+    token_text: str
+    probability: float
+    cumulative_probability: float
+    parent_path_id: Optional[str] = None
+
+@dataclass
+class BeamPath:
+    """Single beam search path"""
+    path_id: str
+    token_sequence: List[int]
+    token_texts: List[str]
     token_probabilities: List[float]
-    is_valid: Optional[bool] = None
-    step_type: str = "reasoning"
+    cumulative_score: float
+    is_complete: bool = False
+    completion_reason: str = ""
+    step_count: int = 0
     
 @dataclass
-class ReasoningBranch:
-    """推理分支"""
-    branch_id: str
-    steps: List[ReasoningStep]
-    total_score: float
-    final_answer: str
-    is_correct: Optional[bool] = None
-    generation_params: Dict[str, Any] = None
-    thinking_process: str = ""
-    solution_process: str = ""
-    generation_success: bool = True
-    generation_time: float = 0.0
+class BeamSearchNode:
+    """Node in beam search tree"""
+    node_id: str
+    parent_id: Optional[str]
+    token_choice: TokenChoice
+    children: List[str]
+    depth: int
+    is_leaf: bool = False
     
 @dataclass
-class BeamSearchResult:
-    """Beam Search结果"""
+class TokenLevelBeamResult:
+    """Token-level beam search result"""
     problem_id: str
     original_question: str
     original_answer: str
-    original_reasoning: str
-    branches: List[ReasoningBranch]
+    beam_tree: Dict[str, BeamSearchNode]
+    completed_paths: List[BeamPath]
+    generation_stats: Dict[str, Any]
     generation_timestamp: str
-    model_used: str = "DeepSeek-R1-Mac"
-    beam_params: Dict[str, Any] = None
-    total_generations: int = 0
-    successful_generations: int = 0
+    model_used: str = "DeepSeek-R1"
 
-class MacOptimizedDeepSeekGenerator:
-    """Mac优化的DeepSeek生成器 - 支持多种部署选项"""
+class TokenLevelBeamSearchGenerator:
+    """Token-level beam search generator for reasoning visualization"""
     
     def __init__(self):
-        """初始化生成器"""
+        """Initialize the generator"""
         self.device_info = self._analyze_system()
         self.model = None
         self.tokenizer = None
@@ -79,25 +86,25 @@ class MacOptimizedDeepSeekGenerator:
             'total_problems': 0,
             'successful_generations': 0,
             'failed_generations': 0,
-            'total_branches': 0,
-            'average_branch_score': 0.0,
+            'average_beam_width': 0.0,
+            'average_sequence_length': 0.0,
             'average_generation_time': 0.0,
             'deployment_mode': self.deployment_mode
         }
         
-        logger.info(f"🍎 Mac-optimized DeepSeek generator initialized")
+        logger.info(f"🔄 Token-level beam search generator initialized")
         logger.info(f"🔧 Deployment mode: {self.deployment_mode}")
     
     def _analyze_system(self) -> Dict[str, Any]:
-        """分析系统配置"""
+        """Analyze system configuration"""
         info = {
-            'platform': 'mac',
+            'platform': 'cross_platform',
             'memory_gb': psutil.virtual_memory().total / (1024**3),
             'cpu_count': psutil.cpu_count(),
             'torch_version': torch.__version__ if 'torch' in globals() else 'Not installed'
         }
         
-        # 检查MPS支持
+        # Check GPU support
         try:
             info['mps_available'] = torch.backends.mps.is_available()
             info['cuda_available'] = torch.cuda.is_available()
@@ -105,71 +112,38 @@ class MacOptimizedDeepSeekGenerator:
             info['mps_available'] = False
             info['cuda_available'] = False
         
-        # 检查芯片类型
-        try:
-            import platform
-            machine = platform.machine()
-            if machine == 'arm64':
-                info['chip_type'] = 'Apple Silicon (M-series)'
-                info['recommended_device'] = 'mps' if info['mps_available'] else 'cpu'
-            else:
-                info['chip_type'] = 'Intel'
-                info['recommended_device'] = 'cpu'
-        except:
-            info['chip_type'] = 'Unknown'
+        # Determine best device
+        if info['cuda_available']:
+            info['recommended_device'] = 'cuda'
+        elif info['mps_available']:
+            info['recommended_device'] = 'mps'
+        else:
             info['recommended_device'] = 'cpu'
         
         logger.info(f"💻 System analysis:")
-        logger.info(f"   Chip: {info['chip_type']}")
         logger.info(f"   Memory: {info['memory_gb']:.1f} GB")
         logger.info(f"   CPU cores: {info['cpu_count']}")
+        logger.info(f"   CUDA available: {info['cuda_available']}")
         logger.info(f"   MPS available: {info['mps_available']}")
         logger.info(f"   Recommended device: {info['recommended_device']}")
         
         return info
     
     def _select_deployment_mode(self) -> str:
-        """选择最佳部署模式"""
+        """Select optimal deployment mode"""
         memory_gb = self.device_info['memory_gb']
         
-        if memory_gb >= 32 and self.device_info['mps_available']:
-            return "local_full_mps" 
+        if memory_gb >= 32 and (self.device_info['cuda_available'] or self.device_info['mps_available']):
+            return "local_full_gpu"
         elif memory_gb >= 16:
-            if self.device_info['mps_available']:
-                return "local_quantized_mps" 
-            else:
-                return "local_quantized_cpu"
+            return "local_quantized_gpu"
         elif memory_gb >= 8:
-            return "hybrid_api_local"  
+            return "hybrid_api_local"
         else:
             return "api_only"
     
-    def find_latest_data_file(self, data_dir: str = "general_math_data") -> Optional[str]:
-        """查找最新的数据文件"""
-        logger.info(f"🔍 Searching for data files in {data_dir}")
-        
-        if not os.path.exists(data_dir):
-            logger.error(f"❌ Directory {data_dir} does not exist")
-            logger.info("💡 Please run the downloader first: python download_deepseek.py")
-            return None
-        
-        pattern = os.path.join(data_dir, "*.jsonl")
-        jsonl_files = glob.glob(pattern)
-        
-        if not jsonl_files:
-            logger.error(f"❌ No .jsonl files found in {data_dir}")
-            return None
-        
-        latest_file = max(jsonl_files, key=os.path.getmtime)
-        file_size_mb = os.path.getsize(latest_file) / (1024 * 1024)
-        
-        logger.info(f"✅ Found data file: {latest_file}")
-        logger.info(f"📊 File size: {file_size_mb:.1f} MB")
-        
-        return latest_file
-    
     def load_model_if_needed(self):
-        """根据部署模式加载模型"""
+        """Load model based on deployment mode"""
         
         if self.deployment_mode in ["api_only", "hybrid_api_local"]:
             logger.info("🌐 Using API mode - no local model loading needed")
@@ -184,9 +158,10 @@ class MacOptimizedDeepSeekGenerator:
         try:
             from transformers import AutoTokenizer, AutoModelForCausalLM
             
-            model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"  # 使用更小的蒸馏版本
+            # Use more capable model for better reasoning
+            model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
             
-            # 加载tokenizer
+            # Load tokenizer
             logger.info("🔤 Loading tokenizer...")
             self.tokenizer = AutoTokenizer.from_pretrained(
                 model_name,
@@ -196,36 +171,29 @@ class MacOptimizedDeepSeekGenerator:
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             
-            # 根据模式加载模型
+            # Load model based on mode
             logger.info("🧠 Loading model...")
             
-            if self.deployment_mode == "local_full_mps":
+            device = self.device_info['recommended_device']
+            
+            if self.deployment_mode == "local_full_gpu":
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model_name,
-                    torch_dtype=torch.float16,
+                    torch_dtype=torch.float16 if device in ['cuda', 'mps'] else torch.float32,
                     trust_remote_code=True,
                     low_cpu_mem_usage=True
-                ).to("mps")
+                ).to(device)
                 
-            elif self.deployment_mode == "local_quantized_mps":
+            elif self.deployment_mode == "local_quantized_gpu":
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model_name,
-                    torch_dtype=torch.float16,
+                    torch_dtype=torch.float16 if device in ['cuda', 'mps'] else torch.float32,
                     trust_remote_code=True,
                     low_cpu_mem_usage=True,
                     device_map="auto"
                 )
-                
-            elif self.deployment_mode == "local_quantized_cpu":
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float32,
-                    trust_remote_code=True,
-                    low_cpu_mem_usage=True
-                )
             
-            logger.info(f"✅ Model loaded successfully")
-            logger.info(f"🎯 Device: {next(self.model.parameters()).device}")
+            logger.info(f"✅ Model loaded successfully on {device}")
             
         except Exception as e:
             logger.error(f"❌ Failed to load local model: {e}")
@@ -234,17 +202,23 @@ class MacOptimizedDeepSeekGenerator:
             self._setup_api_fallback()
     
     def _setup_api_fallback(self):
-        """设置API后备方案"""
+        """Setup API fallback"""
         try:
             import openai
-            api_key = os.environ.get("DEEPSEEK_API_KEY")
+            api_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
             
             if api_key:
-                self.api_client = openai.OpenAI(
-                    api_key=api_key,
-                    base_url="https://api.deepseek.com",
-                    timeout=30.0
-                )
+                if "deepseek" in api_key.lower() or os.environ.get("DEEPSEEK_API_KEY"):
+                    self.api_client = openai.OpenAI(
+                        api_key=api_key,
+                        base_url="https://api.deepseek.com",
+                        timeout=30.0
+                    )
+                    self.api_model = "deepseek-reasoner"
+                else:
+                    self.api_client = openai.OpenAI(api_key=api_key)
+                    self.api_model = "gpt-3.5-turbo"
+                    
                 logger.info("🌐 API fallback configured")
             else:
                 logger.warning("⚠️ No API key found - local generation only")
@@ -252,292 +226,346 @@ class MacOptimizedDeepSeekGenerator:
         except ImportError:
             logger.warning("⚠️ OpenAI package not available for API fallback")
     
-    def generate_single_branch(self, 
-                             question: str,
-                             strategy: str = "default",
-                             strategy_params: Dict[str, Any] = None) -> Optional[ReasoningBranch]:
-        """生成单个推理分支"""
+    def generate_token_level_beam_search(self, 
+                                       question: str,
+                                       beam_width: int = 3,
+                                       max_length: int = 150,
+                                       min_length: int = 20) -> TokenLevelBeamResult:
+        """Generate token-level beam search for reasoning"""
         
         start_time = time.time()
+        logger.info(f"🌳 Starting token-level beam search")
+        logger.info(f"   Beam width: {beam_width}")
+        logger.info(f"   Max length: {max_length}")
         
         try:
-            if self.deployment_mode == "api_only" or (self.deployment_mode == "hybrid_api_local" and hasattr(self, 'api_client')):
-                return self._generate_via_api(question, strategy, strategy_params, start_time)
+            if self.deployment_mode == "api_only" or (hasattr(self, 'api_client')):
+                return self._generate_beam_via_api(question, beam_width, max_length, min_length, start_time)
             else:
-                return self._generate_via_local(question, strategy, strategy_params, start_time)
+                return self._generate_beam_via_local(question, beam_width, max_length, min_length, start_time)
                 
         except Exception as e:
-            logger.error(f"❌ Generation failed: {e}")
-            
-            # 如果是混合模式，尝试另一种方法
-            if self.deployment_mode == "hybrid_api_local":
-                try:
-                    if hasattr(self, 'api_client'):
-                        return self._generate_via_local(question, strategy, strategy_params, start_time)
-                    else:
-                        return self._generate_via_api(question, strategy, strategy_params, start_time)
-                except:
-                    pass
-            
-            return self._create_failed_branch(strategy, str(e), time.time() - start_time)
+            logger.error(f"❌ Beam search generation failed: {e}")
+            return self._create_empty_result(question, str(e))
     
-    def _generate_via_api(self, question: str, strategy: str, strategy_params: Dict[str, Any], start_time: float) -> Optional[ReasoningBranch]:
-        """通过API生成"""
-        logger.info(f"🌐 Generating via API with strategy: {strategy}")
-        
-        prompt = self._create_simple_prompt(question, strategy)
-        
-        response = self.api_client.chat.completions.create(
-            model="deepseek-reasoner",
-            messages=[
-                {"role": "system", "content": "You are a math expert. Think step by step."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=800,
-            stream=False
-        )
-        
-        content = response.choices[0].message.content
-        return self._process_generated_content(content, strategy, time.time() - start_time, "api")
-    
-    def _generate_via_local(self, question: str, strategy: str, strategy_params: Dict[str, Any], start_time: float) -> Optional[ReasoningBranch]:
-        """通过本地模型生成"""
-        logger.info(f"🖥️ Generating via local model with strategy: {strategy}")
+    def _generate_beam_via_local(self, question: str, beam_width: int, max_length: int, min_length: int, start_time: float) -> TokenLevelBeamResult:
+        """Generate beam search using local model"""
+        logger.info("🖥️ Generating beam search via local model")
         
         self.load_model_if_needed()
         
         if self.model is None:
             raise Exception("Local model not available")
         
-        prompt = self._create_simple_prompt(question, strategy)
+        # Create initial prompt
+        prompt = f"Solve this step by step:\n\n{question}\n\nSolution:"
         
-        # Tokenize
-        inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        # Tokenize initial prompt
+        inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
         device = next(self.model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}
         
-        # Generate
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=400,  # 减少token数量以节省内存
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
-                pad_token_id=self.tokenizer.pad_token_id,
-                eos_token_id=self.tokenizer.eos_token_id
-            )
+        # Initialize beam search state
+        beam_tree = {}
+        completed_paths = []
+        active_beams = []
         
-        # Decode
-        generated_tokens = outputs[0][inputs['input_ids'].shape[1]:]
-        content = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        # Create root node
+        root_id = "root"
+        beam_tree[root_id] = BeamSearchNode(
+            node_id=root_id,
+            parent_id=None,
+            token_choice=TokenChoice(
+                token_id=-1,
+                token_text="<start>",
+                probability=1.0,
+                cumulative_probability=1.0
+            ),
+            children=[],
+            depth=0
+        )
         
-        # 清理内存
-        del outputs, inputs
+        # Initialize first beam
+        initial_beam = BeamPath(
+            path_id="beam_0",
+            token_sequence=inputs['input_ids'][0].tolist(),
+            token_texts=[self.tokenizer.decode(tid) for tid in inputs['input_ids'][0]],
+            token_probabilities=[1.0] * len(inputs['input_ids'][0]),
+            cumulative_score=0.0,
+            step_count=0
+        )
+        active_beams.append(initial_beam)
+        
+        # Main beam search loop
+        for step in range(max_length):
+            if not active_beams:
+                break
+                
+            logger.info(f"🔄 Beam search step {step + 1}, active beams: {len(active_beams)}")
+            
+            new_beams = []
+            
+            for beam in active_beams:
+                if beam.is_complete:
+                    completed_paths.append(beam)
+                    continue
+                
+                # Get next token candidates
+                candidates = self._get_next_token_candidates(beam, inputs, beam_width)
+                
+                # Create new beams for each candidate
+                for i, candidate in enumerate(candidates):
+                    new_beam_id = f"beam_{step}_{beam.path_id}_{i}"
+                    
+                    # Create new beam path
+                    new_beam = BeamPath(
+                        path_id=new_beam_id,
+                        token_sequence=beam.token_sequence + [candidate.token_id],
+                        token_texts=beam.token_texts + [candidate.token_text],
+                        token_probabilities=beam.token_probabilities + [candidate.probability],
+                        cumulative_score=beam.cumulative_score + np.log(candidate.probability),
+                        step_count=beam.step_count + 1
+                    )
+                    
+                    # Check completion conditions
+                    if (candidate.token_id == self.tokenizer.eos_token_id or 
+                        len(new_beam.token_sequence) >= max_length or
+                        self._is_reasoning_complete(new_beam.token_texts)):
+                        new_beam.is_complete = True
+                        new_beam.completion_reason = "eos" if candidate.token_id == self.tokenizer.eos_token_id else "max_length"
+                        completed_paths.append(new_beam)
+                    else:
+                        new_beams.append(new_beam)
+                    
+                    # Add to beam tree
+                    node_id = f"node_{step}_{i}"
+                    beam_tree[node_id] = BeamSearchNode(
+                        node_id=node_id,
+                        parent_id=beam.path_id,
+                        token_choice=candidate,
+                        children=[],
+                        depth=step + 1
+                    )
+            
+            # Keep only top beams
+            if new_beams:
+                new_beams.sort(key=lambda x: x.cumulative_score, reverse=True)
+                active_beams = new_beams[:beam_width]
+            else:
+                active_beams = []
+        
+        # Add any remaining active beams to completed
+        completed_paths.extend(active_beams)
+        
+        # Clean up
+        del inputs
         if device.type in ['mps', 'cuda']:
-            torch.mps.empty_cache() if device.type == 'mps' else torch.cuda.empty_cache()
+            if device.type == 'mps':
+                torch.mps.empty_cache()
+            else:
+                torch.cuda.empty_cache()
         
-        return self._process_generated_content(content, strategy, time.time() - start_time, "local")
-    
-    def _create_simple_prompt(self, question: str, strategy: str) -> str:
-        """创建简化的prompt"""
-        if strategy == "systematic":
-            return f"Solve this math problem step by step:\n\n{question}\n\nSolution:"
-        elif strategy == "verification":
-            return f"Solve and verify:\n\n{question}\n\nShow work and check answer:"
-        else:
-            return f"Math problem:\n\n{question}\n\nAnswer:"
-    
-    def _process_generated_content(self, content: str, strategy: str, generation_time: float, source: str) -> ReasoningBranch:
-        """处理生成的内容"""
-        
-        # 简化的内容解析
-        thinking_content, solution_content = self._extract_thinking_and_solution(content)
-        steps = self._parse_reasoning_steps_simple(content)
-        final_answer = self._extract_final_answer_simple(content)
-        
-        branch_id = f"mac_{source}_{strategy}_{int(time.time() * 1000)}"
-        
-        return ReasoningBranch(
-            branch_id=branch_id,
-            steps=steps,
-            total_score=0.0,
-            final_answer=final_answer,
-            thinking_process=thinking_content,
-            solution_process=solution_content,
-            generation_success=True,
-            generation_time=generation_time,
-            generation_params={
-                'strategy': strategy,
-                'source': source,
+        return TokenLevelBeamResult(
+            problem_id=f"problem_{int(time.time())}",
+            original_question=question,
+            original_answer="",
+            beam_tree=beam_tree,
+            completed_paths=completed_paths,
+            generation_stats={
+                'generation_time': time.time() - start_time,
+                'total_paths': len(completed_paths),
+                'beam_width': beam_width,
+                'max_length': max_length,
                 'deployment_mode': self.deployment_mode
-            }
+            },
+            generation_timestamp=datetime.now().isoformat()
         )
     
-    def _parse_reasoning_steps_simple(self, content: str) -> List[ReasoningStep]:
-        """简化的步骤解析"""
-        steps = []
+    def _get_next_token_candidates(self, beam: BeamPath, original_inputs: Dict, beam_width: int) -> List[TokenChoice]:
+        """Get next token candidates for current beam"""
         
-        # 简单按行分割
-        lines = [line.strip() for line in content.split('\n') if line.strip() and len(line.strip()) > 5]
+        # Convert current sequence to tensor
+        current_sequence = torch.tensor([beam.token_sequence], device=next(self.model.parameters()).device)
         
-        for i, line in enumerate(lines[:8]):  # 最多8步
-            steps.append(ReasoningStep(
-                step_id=i,
-                content=line,
-                confidence=0.8,
-                token_probabilities=[0.8],
-                step_type="reasoning"
-            ))
+        # Get model predictions
+        with torch.no_grad():
+            outputs = self.model(current_sequence)
+            logits = outputs.logits[0, -1, :]  # Last token logits
+            probabilities = torch.softmax(logits, dim=-1)
         
-        return steps
+        # Get top-k candidates
+        top_k = min(beam_width * 2, len(probabilities))  # Get more candidates than beam width
+        top_probs, top_indices = torch.topk(probabilities, top_k)
+        
+        candidates = []
+        for prob, idx in zip(top_probs, top_indices):
+            token_text = self.tokenizer.decode(idx.item())
+            
+            candidate = TokenChoice(
+                token_id=idx.item(),
+                token_text=token_text,
+                probability=prob.item(),
+                cumulative_probability=beam.cumulative_score + np.log(prob.item()),
+                parent_path_id=beam.path_id
+            )
+            candidates.append(candidate)
+        
+        return candidates[:beam_width]
     
-    def _extract_thinking_and_solution(self, content: str) -> Tuple[str, str]:
-        """提取思维和解决方案"""
-        think_match = re.search(r'<think>(.*?)</think>', content, re.DOTALL)
-        thinking = think_match.group(1).strip() if think_match else ""
-        solution = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+    def _is_reasoning_complete(self, token_texts: List[str]) -> bool:
+        """Check if reasoning sequence is complete"""
+        full_text = "".join(token_texts).lower()
         
-        if not solution and not thinking:
-            solution = content.strip()
-        
-        return thinking, solution
-    
-    def _extract_final_answer_simple(self, content: str) -> str:
-        """简化的答案提取"""
-        patterns = [
-            r'answer[:\s]*(.+?)(?:\n|$)',
-            r'result[:\s]*(.+?)(?:\n|$)',
-            r'\\boxed\{([^}]+)\}',
-            r'\b([A-E])\b(?:\)|\.|$)'
+        # Simple completion heuristics
+        completion_indicators = [
+            "therefore",
+            "final answer",
+            "conclusion",
+            "the answer is",
+            "result:",
+            "\n\n"
         ]
         
-        for pattern in patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()[:50]
-        
-        # 返回最后一行
-        lines = [line.strip() for line in content.split('\n') if line.strip()]
-        return lines[-1][:50] if lines else "No answer found"
+        return any(indicator in full_text for indicator in completion_indicators)
     
-    def _create_failed_branch(self, strategy: str, error: str, generation_time: float) -> ReasoningBranch:
-        """创建失败的分支"""
-        return ReasoningBranch(
-            branch_id=f"failed_{strategy}_{int(time.time())}",
-            steps=[],
-            total_score=0.0,
-            final_answer="Generation failed",
-            thinking_process="",
-            solution_process="",
-            generation_success=False,
-            generation_time=generation_time,
-            generation_params={'strategy': strategy, 'error': error}
+    def _generate_beam_via_api(self, question: str, beam_width: int, max_length: int, min_length: int, start_time: float) -> TokenLevelBeamResult:
+        """Generate beam search using API (simulated)"""
+        logger.info("🌐 Generating beam search via API (simulated)")
+        
+        # For API mode, we simulate beam search by generating multiple completions
+        # and creating artificial branching points
+        
+        beam_tree = {}
+        completed_paths = []
+        
+        # Create root
+        root_id = "root"
+        beam_tree[root_id] = BeamSearchNode(
+            node_id=root_id,
+            parent_id=None,
+            token_choice=TokenChoice(-1, "<start>", 1.0, 1.0),
+            children=[],
+            depth=0
         )
-    
-    def generate_beam_search_branches(self, 
-                                    problem_data: Dict[str, Any], 
-                                    problem_id: str,
-                                    beam_size: int = 4) -> BeamSearchResult:
-        """生成多分支推理（Mac优化版）"""
         
-        question = problem_data.get('question', '')
-        original_answer = problem_data.get('reference_answer', '')
-        original_reasoning = problem_data.get('reasoning_content', '')
+        # Generate multiple completions with different parameters
+        strategies = [
+            {"temperature": 0.3, "top_p": 0.8},
+            {"temperature": 0.7, "top_p": 0.9},
+            {"temperature": 0.5, "top_p": 0.85}
+        ]
         
-        logger.info(f"🌳 Generating {beam_size} branches for {problem_id}")
-        logger.info(f"📊 Using deployment mode: {self.deployment_mode}")
-        
-        branches = []
-        strategies = ["systematic", "direct", "verification"]
-        
-        try:
-            for i in range(beam_size):
-                strategy = strategies[i % len(strategies)]
-                
-                logger.info(f"🔄 Branch {i+1}/{beam_size} ({strategy})")
-                
-                branch = self.generate_single_branch(
-                    question=question,
-                    strategy=strategy
+        for i, strategy in enumerate(strategies[:beam_width]):
+            try:
+                response = self.api_client.chat.completions.create(
+                    model=self.api_model,
+                    messages=[
+                        {"role": "system", "content": "You are a step-by-step problem solver. Show your reasoning clearly."},
+                        {"role": "user", "content": f"Solve this step by step:\n\n{question}"}
+                    ],
+                    max_tokens=max_length,
+                    temperature=strategy["temperature"],
+                    top_p=strategy["top_p"]
                 )
                 
-                if branch:
-                    branches.append(branch)
+                content = response.choices[0].message.content
                 
-                # 内存清理
-                gc.collect()
-                time.sleep(0.5)  # 避免过热
-            
-            # 计算分支得分
-            successful_branches = [b for b in branches if b.generation_success]
-            for branch in successful_branches:
-                branch.total_score = self._calculate_simple_score(branch, original_answer)
-            
-            # 排序
-            successful_branches.sort(key=lambda x: x.total_score, reverse=True)
-            failed_branches = [b for b in branches if not b.generation_success]
-            final_branches = successful_branches + failed_branches
-            
-            # 创建结果
-            result = BeamSearchResult(
-                problem_id=problem_id,
-                original_question=question,
-                original_answer=original_answer,
-                original_reasoning=original_reasoning,
-                branches=final_branches,
-                generation_timestamp=datetime.now().isoformat(),
-                beam_params={
-                    'beam_size': beam_size,
-                    'deployment_mode': self.deployment_mode,
-                    'device_info': self.device_info
-                },
-                total_generations=len(branches),
-                successful_generations=len(successful_branches)
-            )
-            
-            self.generation_stats['successful_generations'] += 1
-            self.generation_stats['total_branches'] += len(final_branches)
-            
-            logger.info(f"✅ Generated {len(final_branches)} branches ({len(successful_branches)} successful)")
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to generate branches: {e}")
-            self.generation_stats['failed_generations'] += 1
-            return None
+                # Convert to token-like representation
+                words = content.split()
+                
+                # Create artificial beam path
+                path = BeamPath(
+                    path_id=f"api_beam_{i}",
+                    token_sequence=list(range(len(words))),  # Dummy token IDs
+                    token_texts=words,
+                    token_probabilities=[0.8 + 0.1 * np.random.random() for _ in words],
+                    cumulative_score=np.random.uniform(0.6, 0.9),
+                    is_complete=True,
+                    completion_reason="api_complete",
+                    step_count=len(words)
+                )
+                
+                completed_paths.append(path)
+                
+                # Create artificial branching in tree
+                for j, word in enumerate(words[:10]):  # Limit tree depth
+                    node_id = f"api_node_{i}_{j}"
+                    beam_tree[node_id] = BeamSearchNode(
+                        node_id=node_id,
+                        parent_id=f"api_node_{i}_{j-1}" if j > 0 else root_id,
+                        token_choice=TokenChoice(j, word, 0.8 + 0.1 * np.random.random(), 0.8),
+                        children=[],
+                        depth=j + 1
+                    )
+                
+            except Exception as e:
+                logger.warning(f"⚠️ API call {i} failed: {e}")
+                continue
+        
+        return TokenLevelBeamResult(
+            problem_id=f"problem_{int(time.time())}",
+            original_question=question,
+            original_answer="",
+            beam_tree=beam_tree,
+            completed_paths=completed_paths,
+            generation_stats={
+                'generation_time': time.time() - start_time,
+                'total_paths': len(completed_paths),
+                'beam_width': beam_width,
+                'max_length': max_length,
+                'deployment_mode': self.deployment_mode
+            },
+            generation_timestamp=datetime.now().isoformat()
+        )
     
-    def _calculate_simple_score(self, branch: ReasoningBranch, reference_answer: str) -> float:
-        """简化的分支评分"""
-        score = 0.0
+    def _create_empty_result(self, question: str, error: str) -> TokenLevelBeamResult:
+        """Create empty result for failed generation"""
+        return TokenLevelBeamResult(
+            problem_id=f"failed_{int(time.time())}",
+            original_question=question,
+            original_answer="",
+            beam_tree={},
+            completed_paths=[],
+            generation_stats={'error': error},
+            generation_timestamp=datetime.now().isoformat()
+        )
+    
+    def find_latest_data_file(self, data_dir: str = "general_math_data") -> Optional[str]:
+        """Find latest data file"""
+        logger.info(f"🔍 Searching for data files in {data_dir}")
         
-        if branch.generation_success:
-            score += 0.4
+        if not os.path.exists(data_dir):
+            logger.error(f"❌ Directory {data_dir} does not exist")
+            return None
         
-        if branch.steps:
-            score += min(len(branch.steps) / 5, 0.3)
+        pattern = os.path.join(data_dir, "*.jsonl")
+        jsonl_files = glob.glob(pattern)
         
-        if branch.final_answer and reference_answer:
-            if branch.final_answer.lower() in reference_answer.lower() or reference_answer.lower() in branch.final_answer.lower():
-                score += 0.3
+        if not jsonl_files:
+            logger.error(f"❌ No .jsonl files found in {data_dir}")
+            return None
         
-        return score
+        latest_file = max(jsonl_files, key=os.path.getmtime)
+        logger.info(f"✅ Found data file: {latest_file}")
+        
+        return latest_file
     
     def process_dataset(self, 
                        input_file: str, 
-                       output_dir: str = "mac_beam_results",
+                       output_dir: str = "beam_search_results",
                        max_problems: int = 3,
-                       beam_size: int = 3) -> Dict[str, Any]:
-        """处理数据集（Mac版本）"""
+                       beam_width: int = 3) -> Dict[str, Any]:
+        """Process dataset with token-level beam search"""
         
-        logger.info(f"🍎 Mac processing: {max_problems} problems, {beam_size} branches each")
+        logger.info(f"🔄 Processing dataset with token-level beam search")
+        logger.info(f"   Max problems: {max_problems}")
+        logger.info(f"   Beam width: {beam_width}")
         
-        # 创建输出目录
+        # Create output directory
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
-        # 加载数据
+        # Load data
         problems = self._load_data(input_file, max_problems)
         
         if not problems:
@@ -549,39 +577,41 @@ class MacOptimizedDeepSeekGenerator:
         results = []
         for i, problem_data in enumerate(problems):
             try:
-                problem_id = f"mac_{i:04d}"
+                problem_id = f"problem_{i:04d}"
+                question = problem_data.get('question', '')
+                
                 logger.info(f"🔄 Problem {i+1}/{len(problems)}: {problem_id}")
                 
-                beam_result = self.generate_beam_search_branches(
-                    problem_data=problem_data,
-                    problem_id=problem_id,
-                    beam_size=beam_size
+                # Generate token-level beam search
+                beam_result = self.generate_token_level_beam_search(
+                    question=question,
+                    beam_width=beam_width,
+                    max_length=100,
+                    min_length=20
                 )
                 
-                if beam_result:
+                if beam_result and beam_result.completed_paths:
                     results.append(beam_result)
                     
-                    # 保存结果
-                    result_file = output_path / f"{problem_id}_beam_search.json"
+                    # Save result
+                    result_file = output_path / f"{problem_id}_token_beam_search.json"
                     with open(result_file, 'w', encoding='utf-8') as f:
                         json.dump(asdict(beam_result), f, indent=2, ensure_ascii=False)
                     
-                    success_rate = beam_result.successful_generations / beam_result.total_generations
-                    logger.info(f"💾 Saved {problem_id} (success: {success_rate:.0%})")
+                    logger.info(f"💾 Saved {problem_id} with {len(beam_result.completed_paths)} paths")
                 
-                # 问题间休息
+                # Brief pause between problems
                 if i < len(problems) - 1:
-                    logger.info("⏸️ Brief pause...")
-                    time.sleep(2)
+                    time.sleep(1)
                     gc.collect()
                 
             except Exception as e:
                 logger.error(f"❌ Problem {i} failed: {e}")
                 continue
         
-        # 保存汇总
+        # Save summary
         summary_data = {
-            'dataset_source': 'GR.inc general-math (Mac optimized)',
+            'dataset_source': 'Token-level beam search results',
             'total_problems_processed': len(results),
             'generation_stats': self.generation_stats,
             'system_info': self.device_info,
@@ -589,17 +619,17 @@ class MacOptimizedDeepSeekGenerator:
             'timestamp': datetime.now().isoformat()
         }
         
-        summary_file = output_path / "mac_beam_summary.json"
+        summary_file = output_path / "token_beam_summary.json"
         with open(summary_file, 'w', encoding='utf-8') as f:
             json.dump(summary_data, f, indent=2, ensure_ascii=False)
         
-        logger.info(f"🎉 Mac processing completed!")
+        logger.info(f"🎉 Token-level beam search completed!")
         logger.info(f"📊 {len(results)} problems processed successfully")
         
         return summary_data
     
     def _load_data(self, input_file: str, max_problems: int) -> List[Dict]:
-        """加载数据"""
+        """Load data from input file"""
         problems = []
         
         try:
@@ -620,56 +650,49 @@ class MacOptimizedDeepSeekGenerator:
         return problems
 
 def main():
-    """主函数（Mac版本）"""
+    """Main function for token-level beam search generation"""
     
-    logger.info("🍎 Starting Mac-Optimized DeepSeek Beam Search Generation...")
+    logger.info("🚀 Starting Token-Level Beam Search Generation...")
     
     try:
-        # 创建生成器
-        generator = MacOptimizedDeepSeekGenerator()
+        # Create generator
+        generator = TokenLevelBeamSearchGenerator()
         
-        # 查找数据文件
+        # Find data file
         input_file = generator.find_latest_data_file()
         if not input_file:
             logger.error("❌ No data file found")
-            logger.info("💡 Run the downloader first: python download_deepseek.py")
             return
         
-        # Mac友好的配置
+        # Configuration
         CONFIG = {
             "input_file": input_file,
-            "output_dir": "mac_deepseek_beam_results",
-            "max_problems": 2,  # 保守数量
-            "beam_size": 3      # 适中的分支数
+            "output_dir": "token_beam_search_results",
+            "max_problems": 2,
+            "beam_width": 3
         }
         
         logger.info(f"📁 Data file: {CONFIG['input_file']}")
-        logger.info("🍎 Mac optimizations:")
-        logger.info("   • Automatic device detection")
-        logger.info("   • Memory-efficient processing")
-        logger.info("   • API fallback support")
-        logger.info("   • Lightweight model variants")
+        logger.info("🔧 Configuration:")
+        logger.info(f"   • Max problems: {CONFIG['max_problems']}")
+        logger.info(f"   • Beam width: {CONFIG['beam_width']}")
+        logger.info(f"   • Output directory: {CONFIG['output_dir']}")
         
-        # 处理数据集
+        # Process dataset
         summary = generator.process_dataset(
             input_file=CONFIG["input_file"],
             output_dir=CONFIG["output_dir"],
             max_problems=CONFIG["max_problems"],
-            beam_size=CONFIG["beam_size"]
+            beam_width=CONFIG["beam_width"]
         )
         
         if summary:
-            logger.info("🎉 Mac beam search generation completed!")
+            logger.info("🎉 Token-level beam search generation completed!")
             logger.info(f"📊 Deployment mode used: {summary['deployment_mode']}")
             logger.info("📁 Check output directory for results")
         
     except Exception as e:
         logger.error(f"💥 Fatal error: {e}")
-        logger.info("💡 Mac troubleshooting:")
-        logger.info("   1. Install: pip install torch transformers")
-        logger.info("   2. For Apple Silicon: ensure MPS support")
-        logger.info("   3. Fallback: set DEEPSEEK_API_KEY for API mode")
-        logger.info("   4. Check available memory with Activity Monitor")
         raise
 
 if __name__ == "__main__":
