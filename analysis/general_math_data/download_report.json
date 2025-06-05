@@ -1,0 +1,31 @@
+{
+  "config": {
+    "model": "DeepSeek-R1",
+    "output_dir": "general_math_data",
+    "max_retries": 3,
+    "save_sample": true,
+    "sample_size": 50,
+    "convert_to_csv": true
+  },
+  "stats": {
+    "total_samples": 11094,
+    "successful_downloads": 0,
+    "failed_downloads": 0,
+    "start_time": "2025-05-29 02:01:54.309138",
+    "end_time": null,
+    "problem_types": {
+      "general": 6863,
+      "proof": 2080,
+      "equation_solving": 760,
+      "geometry": 416,
+      "calculation": 701,
+      "probability": 274
+    },
+    "difficulty_levels": {},
+    "has_reasoning_traces": 0,
+    "avg_reasoning_length": 0,
+    "file_size_mb": 161.50956439971924
+  },
+  "timestamp": "2025-05-29T02:03:14.473973",
+  "success": true
+}

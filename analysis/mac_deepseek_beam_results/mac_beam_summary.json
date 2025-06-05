@@ -1,0 +1,25 @@
+{
+  "dataset_source": "GR.inc general-math (Mac optimized)",
+  "total_problems_processed": 2,
+  "generation_stats": {
+    "total_problems": 0,
+    "successful_generations": 2,
+    "failed_generations": 0,
+    "total_branches": 6,
+    "average_branch_score": 0.0,
+    "average_generation_time": 0.0,
+    "deployment_mode": "local_quantized_mps"
+  },
+  "system_info": {
+    "platform": "mac",
+    "memory_gb": 16.0,
+    "cpu_count": 8,
+    "torch_version": "2.7.0",
+    "mps_available": true,
+    "cuda_available": false,
+    "chip_type": "Apple Silicon (M-series)",
+    "recommended_device": "mps"
+  },
+  "deployment_mode": "local_quantized_mps",
+  "timestamp": "2025-06-02T21:16:54.567704"
+}
