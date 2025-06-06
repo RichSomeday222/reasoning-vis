@@ -159,7 +159,7 @@ class TokenLevelBeamSearchGenerator:
             from transformers import AutoTokenizer, AutoModelForCausalLM
             
             # Use more capable model for better reasoning
-            model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+            model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"  # Change to a more accessible model
             
             # Load tokenizer
             logger.info("🔤 Loading tokenizer...")
@@ -416,18 +416,25 @@ class TokenLevelBeamSearchGenerator:
         """Check if reasoning sequence is complete"""
         full_text = "".join(token_texts).lower()
         
-        # Simple completion heuristics
+        # 先要求至少生成 min_steps 个 token
+        min_steps = 5
+        if len(token_texts) < min_steps:
+            return False
+        
+        # 只保留“final answer”、“therefore”等关键词
         completion_indicators = [
             "therefore",
             "final answer",
             "conclusion",
             "the answer is",
-            "result:",
-            "\n\n"
+            "result:"
         ]
-        
-        return any(indicator in full_text for indicator in completion_indicators)
-    
+        for indicator in completion_indicators:
+            if indicator in full_text:
+                return True
+        return False
+
+
     def _generate_beam_via_api(self, question: str, beam_width: int, max_length: int, min_length: int, start_time: float) -> TokenLevelBeamResult:
         """Generate beam search using API (simulated)"""
         logger.info("🌐 Generating beam search via API (simulated)")
