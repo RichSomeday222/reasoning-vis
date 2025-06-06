@@ -1,5 +1,5 @@
 {
-  "problem_id": "problem_1749192139",
+  "problem_id": "problem_1749221864",
   "original_question": " $AD$  and  $BE$  are altitudes of an acute triangle  $ABC$ . From  $D$ , perpendiculars are dropped\nto  $AB$  at  $G$  and  $AC$  at  $K$ . From  $E$ , perpendiculars are dropped to  $AB$  at  $F$  and  $BC$  at  $H$ .\nProve that  $FG$  is parallel to  $HK$  and  $FK = GH$ .\n",
   "original_answer": "",
   "beam_tree": {
@@ -21,10 +21,10 @@
       "node_id": "node_0_0",
       "parent_id": "beam_0",
       "token_choice": {
-        "token_id": 6771,
-        "token_text": " Let",
-        "probability": 0.14141911268234253,
-        "cumulative_probability": -1.9560273671692239,
+        "token_id": 71486,
+        "token_text": "Alright",
+        "probability": 0.22277553379535675,
+        "cumulative_probability": -1.5015905893674641,
         "parent_path_id": "beam_0"
       },
       "children": [],
@@ -35,10 +35,10 @@
       "node_id": "node_0_1",
       "parent_id": "beam_0",
       "token_choice": {
-        "token_id": 715,
-        "token_text": " \n",
-        "probability": 0.13494305312633514,
-        "cumulative_probability": -2.0029024182322726,
+        "token_id": 32313,
+        "token_text": "Okay",
+        "probability": 0.15311121940612793,
+        "cumulative_probability": -1.876590697448086,
         "parent_path_id": "beam_0"
       },
       "children": [],
@@ -49,10 +49,10 @@
       "node_id": "node_0_2",
       "parent_id": "beam_0",
       "token_choice": {
-        "token_id": 2503,
-        "token_text": " ...",
-        "probability": 0.07000752538442612,
-        "cumulative_probability": -2.6591525372192777,
+        "token_id": 3830,
+        "token_text": "From",
+        "probability": 0.07639002054929733,
+        "cumulative_probability": -2.5719032124238344,
         "parent_path_id": "beam_0"
       },
       "children": [],
@@ -65,12 +65,10 @@
       "path_id": "beam_0_beam_0_0",
       "token_sequence": [
         151646,
-        50,
-        3948,
-        419,
-        3019,
-        553,
-        3019,
+        16141,
+        279,
+        2701,
+        3405,
         1447,
         400,
         1808,
@@ -186,20 +184,15 @@
         284,
         47484,
         3,
-        220,
-        4192,
-        36842,
-        25,
-        6771
+        16448,
+        71486
       ],
       "token_texts": [
         "<｜begin▁of▁sentence｜>",
-        "S",
-        "olve",
-        " this",
-        " step",
-        " by",
-        " step",
+        "Answer",
+        " the",
+        " following",
+        " question",
         ":\n\n",
         " $",
         "AD",
@@ -315,11 +308,8 @@
         " =",
         " GH",
         "$",
-        " ",
-        ".\n\n\n",
-        "Solution",
-        ":",
-        " Let"
+        " .\n",
+        "Alright"
       ],
       "token_probabilities": [
         1.0,
@@ -443,14 +433,9 @@
         1.0,
         1.0,
         1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        0.14141911268234253
+        0.22277553379535675
       ],
-      "cumulative_score": -1.9560273671692239,
+      "cumulative_score": -1.5015905893674641,
       "is_complete": true,
       "completion_reason": "max_length",
       "step_count": 1
@@ -459,12 +444,10 @@
       "path_id": "beam_0_beam_0_1",
       "token_sequence": [
         151646,
-        50,
-        3948,
-        419,
-        3019,
-        553,
-        3019,
+        16141,
+        279,
+        2701,
+        3405,
         1447,
         400,
         1808,
@@ -580,20 +563,15 @@
         284,
         47484,
         3,
-        220,
-        4192,
-        36842,
-        25,
-        715
+        16448,
+        32313
       ],
       "token_texts": [
         "<｜begin▁of▁sentence｜>",
-        "S",
-        "olve",
-        " this",
-        " step",
-        " by",
-        " step",
+        "Answer",
+        " the",
+        " following",
+        " question",
         ":\n\n",
         " $",
         "AD",
@@ -709,11 +687,8 @@
         " =",
         " GH",
         "$",
-        " ",
-        ".\n\n\n",
-        "Solution",
-        ":",
-        " \n"
+        " .\n",
+        "Okay"
       ],
       "token_probabilities": [
         1.0,
@@ -837,14 +812,9 @@
         1.0,
         1.0,
         1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        0.13494305312633514
+        0.15311121940612793
       ],
-      "cumulative_score": -2.0029024182322726,
+      "cumulative_score": -1.876590697448086,
       "is_complete": true,
       "completion_reason": "max_length",
       "step_count": 1
@@ -853,12 +823,10 @@
       "path_id": "beam_0_beam_0_2",
       "token_sequence": [
         151646,
-        50,
-        3948,
-        419,
-        3019,
-        553,
-        3019,
+        16141,
+        279,
+        2701,
+        3405,
         1447,
         400,
         1808,
@@ -974,20 +942,15 @@
         284,
         47484,
         3,
-        220,
-        4192,
-        36842,
-        25,
-        2503
+        16448,
+        3830
       ],
       "token_texts": [
         "<｜begin▁of▁sentence｜>",
-        "S",
-        "olve",
-        " this",
-        " step",
-        " by",
-        " step",
+        "Answer",
+        " the",
+        " following",
+        " question",
         ":\n\n",
         " $",
         "AD",
@@ -1103,11 +1066,8 @@
         " =",
         " GH",
         "$",
-        " ",
-        ".\n\n\n",
-        "Solution",
-        ":",
-        " ..."
+        " .\n",
+        "From"
       ],
       "token_probabilities": [
         1.0,
@@ -1231,26 +1191,21 @@
         1.0,
         1.0,
         1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        0.07000752538442612
+        0.07639002054929733
       ],
-      "cumulative_score": -2.6591525372192777,
+      "cumulative_score": -2.5719032124238344,
       "is_complete": true,
       "completion_reason": "max_length",
       "step_count": 1
     }
   ],
   "generation_stats": {
-    "generation_time": 0.3728940486907959,
+    "generation_time": 0.36943912506103516,
     "total_paths": 3,
     "beam_width": 3,
     "max_length": 100,
     "deployment_mode": "local_quantized_gpu"
   },
-  "generation_timestamp": "2025-06-06T01:42:19.737420",
+  "generation_timestamp": "2025-06-06T09:57:44.006466",
   "model_used": "DeepSeek-R1"
 }
