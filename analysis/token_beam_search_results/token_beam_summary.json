@@ -1,6 +1,6 @@
 {
   "dataset_source": "Token-level beam search results",
-  "total_problems_processed": 2,
+  "total_problems_processed": 1,
   "generation_stats": {
     "total_problems": 0,
     "successful_generations": 0,
@@ -19,6 +19,6 @@
     "cuda_available": false,
     "recommended_device": "mps"
   },
-  "deployment_mode": "local_quantized_gpu",
-  "timestamp": "2025-06-06T09:57:44.009570"
+  "deployment_mode": "api_only",
+  "timestamp": "2025-06-06T10:05:34.477495"
 }
