@@ -11,7 +11,7 @@
     "total_samples": 11094,
     "successful_downloads": 0,
     "failed_downloads": 0,
-    "start_time": "2025-05-29 02:01:54.309138",
+    "start_time": "2025-06-16 04:44:55.071631",
     "end_time": null,
     "problem_types": {
       "general": 6863,
@@ -26,6 +26,6 @@
     "avg_reasoning_length": 0,
     "file_size_mb": 161.50956439971924
   },
-  "timestamp": "2025-05-29T02:03:14.473973",
+  "timestamp": "2025-06-16T04:45:00.949754",
   "success": true
 }

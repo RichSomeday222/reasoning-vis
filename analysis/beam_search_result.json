@@ -1,0 +1,147 @@
+{
+  "problem": {
+    "question": "Let S be the sum of the first nine terms of the sequence x+a, x²+2a, x³+3a, ... Then S equals:\nA) (50a+x+x⁸)/(x+1)\nB) 50a-(x+x¹⁰)/(x-1) \nC) (x⁹-1)/(x+1)+45a\nD) (x¹⁰-x)/(x-1)+45a",
+    "options": [
+      "A) (50a+x+x⁸)/(x+1)",
+      "B) 50a-(x+x¹⁰)/(x-1)",
+      "C) (x⁹-1)/(x+1)+45a",
+      "D) (x¹⁰-x)/(x-1)+45a"
+    ]
+  },
+  "beam_tree": {
+    "root": {
+      "id": "root",
+      "content": "Analyze the problem and identify key components",
+      "reasoning_type": "start",
+      "quality_score": 1.0,
+      "probability": 1.0,
+      "parent": null,
+      "children": [
+        "root_child_0",
+        "root_child_1",
+        "root_child_2"
+      ],
+      "variables": [
+        "problem_analysis",
+        "sequence_identification"
+      ],
+      "depth": 0
+    },
+    "root_child_0": {
+      "id": "root_child_0",
+      "content": "Identify the general term of the sequence",
+      "reasoning_type": "problem_understanding",
+      "quality_score": 0.6468287298300159,
+      "probability": 0.7940486189490048,
+      "parent": "root",
+      "children": [
+        "root_child_0_child_0",
+        "root_child_0_child_1"
+      ],
+      "variables": [
+        "general term"
+      ],
+      "depth": 1
+    },
+    "root_child_1": {
+      "id": "root_child_1",
+      "content": "Try substitution with specific values",
+      "reasoning_type": "problem_understanding",
+      "quality_score": 0.42242218195338055,
+      "probability": 0.7267266545860142,
+      "parent": "root",
+      "children": [],
+      "variables": [
+        "Try"
+      ],
+      "depth": 1
+    },
+    "root_child_2": {
+      "id": "root_child_2",
+      "content": "Look for patterns in the coefficients",
+      "reasoning_type": "problem_understanding",
+      "quality_score": 0.47546496926706,
+      "probability": 0.7426394907801179,
+      "parent": "root",
+      "children": [],
+      "variables": [
+        "Look"
+      ],
+      "depth": 1
+    },
+    "root_child_0_child_0": {
+      "id": "root_child_0_child_0",
+      "content": "Split the sum into separate parts: Σ(x^k) + aΣ(k)",
+      "reasoning_type": "calculation",
+      "quality_score": 0.41751111346846176,
+      "probability": 0.7252533340405385,
+      "parent": "root_child_0",
+      "children": [],
+      "variables": [
+        "sum"
+      ],
+      "depth": 2
+    },
+    "root_child_0_child_1": {
+      "id": "root_child_0_child_1",
+      "content": "Calculate each term individually",
+      "reasoning_type": "calculation",
+      "quality_score": 0.37135617518127384,
+      "probability": 0.7114068525543822,
+      "parent": "root_child_0",
+      "children": [],
+      "variables": [
+        "calculate"
+      ],
+      "depth": 2
+    }
+  },
+  "paths": [
+    {
+      "id": "path_3",
+      "nodes": [
+        "root",
+        "root_child_2"
+      ],
+      "quality": "good",
+      "score": 0.73773248463353,
+      "is_correct": false,
+      "final_answer": "A"
+    },
+    {
+      "id": "path_2",
+      "nodes": [
+        "root",
+        "root_child_1"
+      ],
+      "quality": "good",
+      "score": 0.7112110909766902,
+      "is_correct": false,
+      "final_answer": "B"
+    },
+    {
+      "id": "path_0",
+      "nodes": [
+        "root",
+        "root_child_0",
+        "root_child_0_child_0"
+      ],
+      "quality": "good",
+      "score": 0.6881132810994925,
+      "is_correct": false,
+      "final_answer": "A"
+    },
+    {
+      "id": "path_1",
+      "nodes": [
+        "root",
+        "root_child_0",
+        "root_child_0_child_1"
+      ],
+      "quality": "good",
+      "score": 0.6727283016704299,
+      "is_correct": false,
+      "final_answer": "C"
+    }
+  ]
+}
