@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./analysis
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./analysis:/app
+    environment:
+      - DEEPSEEK_API_KEY=sk-97bd0ebfd6ee46d39098c44700aab855
+      - AGI_API_KEY=o43u5iLJ0OeLaUtM_SA__CIylCh8tGAbp1iv2uW6w-M
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+    depends_on:
+      - backend

@@ -36,3 +36,9 @@ build/
 .venv/
 venv/
 analysis/general_math_data/
+
+# ngrok files
+ngrok
+ngrok-*
+*.zip
+*.tgz

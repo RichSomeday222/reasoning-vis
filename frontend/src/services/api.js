@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'https://1413-2607-ea00-101-3c74-7b48-293-f9dd-b47f.ngrok-free.app';
 
 export class BeamSearchAPI {
   async generateBeamSearch(question, beamWidth = 3) {
