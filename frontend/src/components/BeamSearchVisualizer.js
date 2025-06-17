@@ -1,8 +1,7 @@
 // src/components/BeamSearchVisualizer.js
 import React, { useState, useEffect, useRef } from 'react';
 import * as d3 from 'd3';
-import { mockTreeData } from '../data/mockTreeData'; 
-
+import { beamSearchAPI } from '../services/api';
 
 const BeamSearchVisualizer = () => {
   const svgRef = useRef();
@@ -10,6 +9,12 @@ const BeamSearchVisualizer = () => {
   const [selectedPath, setSelectedPath] = useState(null);
   const [highlightedPath, setHighlightedPath] = useState(null);
   const [collapsedNodes, setCollapsedNodes] = useState(new Set());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [currentData, setCurrentData] = useState(null);
+
+  // 默认问题
+  const defaultQuestion = "Let S be the sum of the first nine terms of the sequence x+a, x²+2a, x³+3a, ... Then S equals:";
 
   const getQualityColor = (score) => {
     if (score >= 0.9) return '#166534'; 
@@ -28,8 +33,29 @@ const BeamSearchVisualizer = () => {
     return colors[type] || '#6B7280';
   };
 
+  // API调用函数
+  const generateFromAPI = async (question) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const result = await beamSearchAPI.generateBeamSearch(question, 3);
+      setCurrentData(result);
+    } catch (error) {
+      setError('Failed to generate beam search: ' + error.message);
+      console.error('Generation failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 组件加载时自动生成
   useEffect(() => {
-    if (!svgRef.current) return;
+    generateFromAPI(defaultQuestion);
+  }, []);
+
+  useEffect(() => {
+    if (!svgRef.current || !currentData) return;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
@@ -38,31 +64,29 @@ const BeamSearchVisualizer = () => {
     const height = 800;
     const margin = {top: 50, right: 50, bottom: 50, left: 50};
 
-    // 构建层次结构
-    // 构建层次数据
-const buildHierarchy = () => {
-  const nodes = mockTreeData.beam_tree;
-  
-  const buildNode = (nodeId) => {
-      const node = nodes[nodeId];
-      // 如果节点被折叠，不显示其子节点
-      if (collapsedNodes.has(nodeId)) {
-        return {
-          id: nodeId,
-          data: { ...node, _collapsed: true },
-          children: []
-        };
-      }
+    const buildHierarchy = () => {
+      const nodes = currentData.beam_tree;
       
-      return {
-        id: nodeId,
-        data: { ...node, _collapsed: false },
-        children: node.children.map(childId => buildNode(childId))
+      const buildNode = (nodeId) => {
+          const node = nodes[nodeId];
+          // 如果节点被折叠，不显示其子节点
+          if (collapsedNodes.has(nodeId)) {
+            return {
+              id: nodeId,
+              data: { ...node, _collapsed: true },
+              children: []
+            };
+          }
+          
+          return {
+            id: nodeId,
+            data: { ...node, _collapsed: false },
+            children: node.children.map(childId => buildNode(childId))
+          };
+        };
+        
+        return buildNode('root');
       };
-    };
-    
-    return buildNode('root');
-  };
 
     const hierarchyData = buildHierarchy();
     const treeLayout = d3.tree().size([width - margin.left - margin.right, height - margin.top - margin.bottom]);
@@ -132,7 +156,7 @@ const buildHierarchy = () => {
       .style('fill', '#374151')
       .style('cursor', 'pointer')
       .text(d => {
-        const originalNode = mockTreeData.beam_tree[d.data.id];
+        const originalNode = currentData.beam_tree[d.data.id];
         if (originalNode.children && originalNode.children.length > 0) {
           return d.data.data._collapsed ? '+' : '−';
         }
@@ -168,25 +192,26 @@ const buildHierarchy = () => {
       nodeGroups.selectAll('rect').style('stroke-width', 2);
       d3.select(this).select('rect').style('stroke-width', 4);
     });
+    
     nodeGroups.on('dblclick', function(event, d) {
-    event.stopPropagation(); // 阻止事件冒泡
-    
-    const nodeId = d.data.id;
-    const originalNode = mockTreeData.beam_tree[nodeId];
-    
-    // 只有有子节点的节点才能折叠/展开
-    if (originalNode.children && originalNode.children.length > 0) {
-      setCollapsedNodes(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(nodeId)) {
-          newSet.delete(nodeId); // 展开
-        } else {
-          newSet.add(nodeId);    // 折叠
-        }
-        return newSet;
-      });
-    }
-  });
+      event.stopPropagation(); // 阻止事件冒泡
+      
+      const nodeId = d.data.id;
+      const originalNode = currentData.beam_tree[nodeId];
+      
+      // 只有有子节点的节点才能折叠/展开
+      if (originalNode.children && originalNode.children.length > 0) {
+        setCollapsedNodes(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(nodeId)) {
+            newSet.delete(nodeId); // 展开
+          } else {
+            newSet.add(nodeId);    // 折叠
+          }
+          return newSet;
+        });
+      }
+    });
 
     nodeGroups
     .on('mouseenter', function(event, d) {
@@ -241,10 +266,9 @@ const buildHierarchy = () => {
       d3.select('.tooltip').remove();
     });
 
-
     // 路径高亮功能
     const highlightPath = (pathId) => {
-      const path = mockTreeData.paths.find(p => p.id === pathId);
+      const path = currentData.paths.find(p => p.id === pathId);
       if (!path) return;
 
       // 重置样式
@@ -288,24 +312,86 @@ const buildHierarchy = () => {
     window.highlightPath = highlightPath;
     window.resetHighlight = resetHighlight;
 
-  }, [collapsedNodes]);
+  }, [collapsedNodes, currentData]);
+
+  // 加载状态或错误时的显示
+  if (loading) {
+    return (
+      <div className="w-full max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">Generating AI Reasoning...</h2>
+          <p className="text-gray-600">Please wait while we analyze the mathematical problem</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="bg-white rounded-lg shadow-lg p-8 text-center max-w-md">
+          <div className="text-red-500 text-4xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">Generation Failed</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={() => generateFromAPI(defaultQuestion)}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentData) {
+    return (
+      <div className="w-full max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Loading...</h2>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
       {/* 标题和问题 */}
       <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
         <h1 className="text-3xl font-bold text-gray-800 mb-4">
-          Beam Search Reasoning
+          AI Beam Search Reasoning
         </h1>
         
         {/* 问题框 */}
         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
           <h3 className="font-semibold text-blue-800 mb-2">Question</h3>
-          <p className="text-blue-700 mb-3">{mockTreeData.problem.question}</p>
+          <p className="text-blue-700 mb-3">{currentData.problem.question}</p>
           <div className="grid grid-cols-2 gap-2 text-sm">
-            {mockTreeData.problem.options.map((option, idx) => (
+            {currentData.problem.options.map((option, idx) => (
               <div key={idx} className="text-blue-600 font-mono">{option}</div>
             ))}
+          </div>
+        </div>
+
+        {/* 控制面板 */}
+        <div className="bg-green-50 p-4 rounded-lg mb-4 border border-green-200">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => generateFromAPI(currentData.problem.question)}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 transition-colors"
+            >
+              {loading ? 'Generating...' : '🤖 Generate New Analysis'}
+            </button>
+            
+            <span className="px-3 py-1 rounded text-sm font-medium bg-green-100 text-green-800">
+              ✨ AI Generated Reasoning
+            </span>
+
+            <div className="text-sm text-green-700">
+              {currentData.paths?.length || 0} reasoning paths found
+            </div>
           </div>
         </div>
 
@@ -336,11 +422,11 @@ const buildHierarchy = () => {
             <span className="font-medium">Reasoning Type:</span>
             <div className="flex gap-2">
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                <div className="w-3 h-3 rounded-full" style={{backgroundColor: '#8B5CF6'}}></div>
                 <span>Understanding</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded-full bg-cyan-500"></div>
+                <div className="w-3 h-3 rounded-full" style={{backgroundColor: '#06B6D4'}}></div>
                 <span>Calculation</span>
               </div>
               <div className="flex items-center gap-1">
@@ -377,7 +463,7 @@ const buildHierarchy = () => {
               Reset View
             </button>
             
-            {mockTreeData.paths.map((path, idx) => (
+            {currentData.paths.map((path, idx) => (
               <div key={path.id} className="space-y-2">
                 <button
                   onClick={() => window.highlightPath(path.id)}
