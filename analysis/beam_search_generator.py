@@ -416,21 +416,31 @@ class UnifiedBeamSearchGenerator:
         return result
     
     def _extract_options(self, question: str) -> List[str]:
-        """Extract multiple choice options from question"""
+        """Extract multiple choice options"""
+        print("="*50)
+        print("DEBUG: _extract_options 接收到的参数:")
+        print(f"question 类型: {type(question)}")
+        print(f"question 长度: {len(question) if question else 'None'}")
+        print("question 内容:")
+        print(repr(question))  # 使用 repr 可以看到特殊字符
+        print("="*50)
         options = []
-        option_pattern = r'[A-E]\)\s*([^A-E\n]+(?:\n(?![A-E]\))[^\n]*)*)'
-        matches = re.findall(option_pattern, question, re.MULTILINE)
+        option_pattern = r'([A-E]\)\s*[^A-E]*?)(?=[A-E]\)|$)'
+        matches = re.findall(option_pattern, question, re.DOTALL)
         
-        for i, match in enumerate(matches):
-            letter = chr(ord('A') + i)
-            clean_match = re.sub(r'\s+', ' ', match.strip())
-            options.append(f"{letter}) {clean_match}")
-        
+        for match in matches:
+            option = match.strip()
+            if option:
+                options.append(option)
         if not options:
-            options = ["A) Option A", "B) Option B", "C) Option C", "D) Option D"]
-            
-        return options
-    
+            lines = question.split('\n')
+            for line in lines:
+                line = line.strip()
+                if re.match(r'^[A-E]\)', line):
+                    options.append(line)
+        
+        return options if options else [""]
+        
     def _extract_paths_from_tree(self, beam_tree: Dict[str, FrontendBeamNode]) -> List[FrontendPath]:
         """Extract all complete paths from beam tree"""
         paths: List[FrontendPath] = []

@@ -61,7 +61,7 @@
     },
     "method_1_result": {
       "id": "method_1_result",
-      "content": "Answer: D) D) x = 9",
+      "content": "Answer: A) A) x = 4",
       "reasoning_type": "conclusion",
       "quality_score": 0.8800000000000001,
       "probability": 0.8,
@@ -177,8 +177,8 @@
       ],
       "quality": "good",
       "score": 0.8500000000000001,
-      "is_correct": true,
-      "final_answer": "D"
+      "is_correct": false,
+      "final_answer": "B"
     },
     {
       "id": "path_1",
@@ -191,7 +191,7 @@
       "quality": "good",
       "score": 0.7050000000000001,
       "is_correct": false,
-      "final_answer": "B"
+      "final_answer": "C"
     },
     {
       "id": "path_2",

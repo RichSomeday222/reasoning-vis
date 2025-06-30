@@ -1,0 +1,55 @@
+{
+  "datasets": {
+    "manual": {
+      "name": "Manual Test Problems",
+      "description": "Hand-crafted test problems",
+      "source": "manual",
+      "total_problems": 5,
+      "problems": [
+        {
+          "id": "manual_001",
+          "question": "Let S be the sum of the first nine terms of the sequence x+a, x²+2a, x³+3a, ... Then S equals:\nA) (50a+x+x⁸)/(x+1)\nB) 50a-(x+x¹⁰)/(x-1)\nC) (x⁹-1)/(x+1)+45a\nD) (x¹⁰-x)/(x-1)+45a",
+          "category": "sequence",
+          "difficulty": "hard",
+          "dataset": "manual"
+        },
+        {
+          "id": "manual_002", 
+          "question": "A triangle has sides of length 3, 4, and 5. What is its area?\nA) 6\nB) 7.5\nC) 10\nD) 12",
+          "category": "geometry",
+          "difficulty": "easy",
+          "dataset": "manual"
+        },
+        {
+          "id": "manual_003",
+          "question": "Solve for x: 2x + 5 = 13\nA) x = 4\nB) x = 6\nC) x = 8\nD) x = 9",
+          "category": "algebra", 
+          "difficulty": "easy",
+          "dataset": "manual"
+        },
+        {
+          "id": "manual_004",
+          "question": "What is the derivative of f(x) = x³ + 2x² - 5x + 1?\nA) 3x² + 4x - 5\nB) 3x² + 4x + 5\nC) x⁴ + 2x³ - 5x²\nD) 3x + 4",
+          "category": "calculus",
+          "difficulty": "medium",
+          "dataset": "manual"
+        },
+        {
+          "id": "manual_005",
+          "question": "A coin is flipped 3 times. What is the probability of getting exactly 2 heads?\nA) 1/8\nB) 3/8\nC) 1/2\nD) 5/8",
+          "category": "probability",
+          "difficulty": "medium",
+          "dataset": "manual"
+        }
+      ]
+    },
+    "gr_inc_math": {
+      "name": "GR.inc Math Dataset", 
+      "description": "Mathematical reasoning problems from GR.inc",
+      "source": "gr_inc",
+      "task": "general-math",
+      "total_problems": 0,
+      "problems": []
+    }
+  }
+}

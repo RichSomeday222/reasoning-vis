@@ -61,7 +61,7 @@
     },
     "method_1_result": {
       "id": "method_1_result",
-      "content": "Answer: C) C) 10",
+      "content": "Answer: B) B) 7.5",
       "reasoning_type": "conclusion",
       "quality_score": 0.8800000000000001,
       "probability": 0.8,
@@ -178,7 +178,7 @@
       "quality": "good",
       "score": 0.8500000000000001,
       "is_correct": false,
-      "final_answer": "A"
+      "final_answer": "C"
     },
     {
       "id": "path_1",
