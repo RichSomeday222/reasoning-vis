@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://1413-2607-ea00-101-3c74-7b48-293-f9dd-b47f.ngrok-free.app';
+const API_BASE_URL = 'https://beamsearch-demo.ngrok.io';
 
 export class BeamSearchAPI {
   async generateBeamSearch(question, beamWidth = 3) {
@@ -7,6 +7,7 @@ export class BeamSearchAPI {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true' 
         },
         body: JSON.stringify({
           question: question,
@@ -28,7 +29,11 @@ export class BeamSearchAPI {
 
   async healthCheck() {
     try {
-      const response = await fetch(`${API_BASE_URL}/health`);
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true'  // 添加这个头
+        }
+      });
       return await response.json();
     } catch (error) {
       console.error('Health check failed:', error);
