@@ -11,31 +11,37 @@ from datetime import datetime
 from collections import Counter
 import asyncio
 
-
 # Add current directory to import path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from data_loader import load_problems_data
+
+# 导入本地 DeepSeek 生成器
+try:
+    from beam_search_generator import EnhancedLocalDeepSeekBeamGenerator
+    LOCAL_DEEPSEEK_AVAILABLE = True
+    print("✅ Local DeepSeek beam generator available")
+except ImportError as e:
+    LOCAL_DEEPSEEK_AVAILABLE = False
+    print(f"⚠️ Local DeepSeek beam generator not available: {e}")
+
+
+# 导入 O1 客户端
 try:
     from enhanced_o1_client import EnhancedO1ReasoningClient
     O1_AVAILABLE = True
 except ImportError:
     O1_AVAILABLE = False
     print("⚠️ O1ReasoningClient not available - O1 model will be disabled")
+
 try:
-    from test_o1_integration import O1UnifiedBeamSearchGenerator
+    from analysis.test.test_o1_integration import O1UnifiedBeamSearchGenerator
     O1_BEAM_AVAILABLE = True
 except ImportError:
     O1_BEAM_AVAILABLE = False
     print("⚠️ O1UnifiedBeamSearchGenerator not available; O1 beam search disabled")
 
-try:
-    from beam_search_generator import UnifiedBeamSearchGenerator
-    DEEPSEEK_AVAILABLE = True
-except ImportError:
-    DEEPSEEK_AVAILABLE = False
-    print("⚠️ UnifiedBeamSearchGenerator not available - DeepSeek model will be disabled")
-# 尝试导入增强功能
+# 测试 O1 客户端
 print("Testing O1 import...")
 try:
     from o1_reasoning_client import O1ReasoningClient
@@ -44,17 +50,10 @@ try:
 except Exception as e:
     print(f"❌ O1 client test failed: {e}")
 
-try:
-    from beam_search_generator import UnifiedBeamSearchGenerator
-    DEEPSEEK_AVAILABLE = True
-except ImportError:
-    DEEPSEEK_AVAILABLE = False
-    print("⚠️ UnifiedBeamSearchGenerator not available - DeepSeek model will be disabled")
-
 # Load data
 problems_data, datasets_info = load_problems_data(max_math=5, max_engineering=5)
 
-app = FastAPI(title="Enhanced Beam Search API", version="2.0.0")
+app = FastAPI(title="Enhanced Local DeepSeek Beam Search API", version="3.0.0")
 
 # Enable CORS for frontend access
 app.add_middleware(
@@ -66,36 +65,52 @@ app.add_middleware(
 )
 
 # Global variables
-generator = None
+local_deepseek_generator = None
+original_generator = None
 o1_beam_generator = None
 o1_client = None
 
 class BeamSearchRequest(BaseModel):
     question: Optional[str] = None
     problem_id: Optional[str] = None
-    model: str = "DeepSeek-R1"  # 指定使用的模型
+    model: str = "Local-DeepSeek-R1"  # 默认使用本地 DeepSeek
     beam_width: int = 3
     max_length: int = 150
+    force_api: bool = False  # 强制使用 API 而不是本地模型
 
 @app.on_event("startup")
 async def startup_event():
-    global generator, o1_client
-    global o1_beam_generator
-    print("Initializing enhanced beam search generator...")
+    global local_deepseek_generator, original_generator, o1_client, o1_beam_generator
     
+    print("🚀 Initializing Enhanced Local DeepSeek API server...")
     
-    if DEEPSEEK_AVAILABLE:
+    # 初始化本地 DeepSeek 生成器
+    if LOCAL_DEEPSEEK_AVAILABLE:
         try:
-            generator = UnifiedBeamSearchGenerator()
-            print("✅ DeepSeek generator initialized")
+            print("📥 Initializing local DeepSeek R1 engine...")
+            local_deepseek_generator = EnhancedLocalDeepSeekBeamGenerator(
+                model_path="deepseek-ai/deepseek-math-7b-instruct",
+                cache_dir="/app/models",
+                gpu_id=1,  # 使用 GPU 1
+                use_local_engine=True,
+                fallback_to_api=True
+            )
+            
+            # 检查状态
+            status = local_deepseek_generator.get_status()
+            if status.get("local_engine_available", False):
+                print("✅ Local DeepSeek R1 generator initialized successfully")
+                print(f"   Status: {status}")
+            else:
+                print("⚠️ Local DeepSeek engine not available, will use API fallback")
+                
         except Exception as e:
-            print(f"❌ DeepSeek generator failed: {e}")
-            generator = None
+            print(f"❌ Local DeepSeek generator failed: {e}")
+            local_deepseek_generator = None
     else:
-        print("❌ DeepSeek generator not available")
-        generator = None
+        print("❌ Local DeepSeek generator not available - import failed")
     
-    # 初始化O1客户端
+    # 初始化 O1 客户端
     if O1_AVAILABLE:
         try:
             o1_client = EnhancedO1ReasoningClient(use_enhanced_parsing=True)
@@ -106,6 +121,7 @@ async def startup_event():
         except Exception as e:
             print(f"❌ O1 client failed: {e}")
             o1_client = None
+    
     if O1_BEAM_AVAILABLE:
         try:
             o1_beam_generator = O1UnifiedBeamSearchGenerator()
@@ -113,18 +129,23 @@ async def startup_event():
         except Exception as e:
             print(f"❌ O1 beam generator failed: {e}")
             o1_beam_generator = None
-    else:
-        print("❌ O1 client not available")
-        o1_client = None
     
-    print("Enhanced generator is ready.")
+    print("🎉 Enhanced Local DeepSeek server startup completed.")
 
 @app.get("/")
 async def root():
-    return {"message": "Enhanced Beam Search API is running.", "version": "2.0.0"}
+    return {
+        "message": "Enhanced Local DeepSeek Beam Search API is running.", 
+        "version": "3.0.0",
+        "features": ["Local DeepSeek R1", "Real-time Beam Search", "GPU Acceleration"]
+    }
 
 @app.get("/health")
 async def health_check():
+    local_status = {}
+    if local_deepseek_generator:
+        local_status = local_deepseek_generator.get_status()
+    
     o1_available = False
     if o1_client:
         try:
@@ -135,18 +156,33 @@ async def health_check():
     return {
         "status": "healthy",
         "components": {
-            "deepseek_generator": generator is not None,
+            "local_deepseek_generator": local_deepseek_generator is not None,
+            "local_deepseek_status": local_status,
+            "original_generator": original_generator is not None,
             "o1_client": o1_client is not None,
             "o1_available": o1_available
         },
         "datasets_loaded": len(datasets_info),
         "total_problems": len(problems_data),
-        "api_version": "2.0.0"
+        "api_version": "3.0.0"
     }
 
 @app.get("/models")
 async def get_available_models():
     """获取可用的推理模型"""
+    
+    # 检查本地 DeepSeek 状态
+    local_deepseek_status = "unavailable"
+    if local_deepseek_generator:
+        status = local_deepseek_generator.get_status()
+        if status.get("local_engine_loaded", False):
+            local_deepseek_status = "available"
+        elif status.get("local_engine_available", False):
+            local_deepseek_status = "needs_loading"
+        elif status.get("api_client_available", False):
+            local_deepseek_status = "api_fallback"
+    
+    # 检查 O1 状态
     o1_available = False
     if o1_client:
         try:
@@ -156,10 +192,19 @@ async def get_available_models():
     
     models = [
         {
+            "id": "Local-DeepSeek-R1",
+            "name": "Local DeepSeek R1",
+            "description": "Local DeepSeek R1 7B model running on GPU with real reasoning",
+            "status": local_deepseek_status,
+            "type": "local_model",
+            "gpu_required": True,
+            "features": ["Real reasoning", "Fast inference", "Beam search"]
+        },
+        {
             "id": "DeepSeek-R1",
-            "name": "DeepSeek R1",
-            "description": "Simulated DeepSeek reasoning (based on problem patterns)",
-            "status": "available" if generator else "unavailable",
+            "name": "DeepSeek R1 (Simulated)",
+            "description": "Simulated DeepSeek reasoning based on problem patterns",
+            "status": "available" if original_generator else "unavailable",
             "type": "simulated"
         },
         {
@@ -198,8 +243,35 @@ async def generate_beam_search(request: BeamSearchRequest):
             raise HTTPException(status_code=400, detail="Either question or problem_id must be provided")
 
         # 根据模型选择生成方式
-        if request.model == "O1":
-            # 使用真实的O1 API
+        if request.model == "Local-DeepSeek-R1":
+            # 使用本地 DeepSeek R1 模型
+            if not local_deepseek_generator:
+                raise HTTPException(status_code=503, detail="Local DeepSeek R1 generator not available")
+            
+            print(f"🤖 Generating with Local DeepSeek R1...")
+            result = await local_deepseek_generator.generate_reasoning_beam_search(
+                question=question,
+                beam_width=request.beam_width,
+                max_depth=5,
+                force_api=request.force_api
+            )
+            
+            response_data = {
+                "mode": "single",
+                "model": "Local-DeepSeek-R1",
+                "problem": result.problem,
+                "beam_tree": result.beam_tree,
+                "paths": result.paths,
+                "model_info": {
+                    "name": "Local DeepSeek R1",
+                    "type": "local_model",
+                    "gpu_accelerated": True,
+                    "reasoning_source": result.problem.get("reasoning_source", "local_deepseek_r1")
+                }
+            }
+            
+        elif request.model == "O1":
+            # 使用真实的 O1 API
             if not o1_client:
                 raise HTTPException(status_code=503, detail="O1 model not available - O1ReasoningClient not imported")
             
@@ -229,12 +301,12 @@ async def generate_beam_search(request: BeamSearchRequest):
             }
             
         elif request.model == "DeepSeek-R1":
-            # 使用模拟的DeepSeek生成器
-            if not generator:
-                raise HTTPException(status_code=503, detail="DeepSeek generator not available")
+            # 使用原有的模拟生成器
+            if not original_generator:
+                raise HTTPException(status_code=503, detail="Original DeepSeek generator not available")
             
-            print(f"🤖 Generating with simulated DeepSeek...")
-            result = generator.generate_reasoning_beam_search(
+            print(f"🎭 Generating with simulated DeepSeek...")
+            result = await original_generator.generate_reasoning_beam_search(
                 question=question,
                 beam_width=request.beam_width,
                 max_depth=5
@@ -259,14 +331,16 @@ async def generate_beam_search(request: BeamSearchRequest):
         raise
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/compare")
 async def compare_models(request: BeamSearchRequest):
-    """对比多个模型的推理结果"""
+    """对比本地 DeepSeek R1 和其他模型的推理结果"""
     
-    # 强制对比模式，使用两个模型
-    models_to_compare = ["DeepSeek-R1", "O1"]
+    # 对比模式：本地 DeepSeek R1 vs O1
+    models_to_compare = ["Local-DeepSeek-R1", "O1"]
     
     try:
         # 获取问题
@@ -292,40 +366,45 @@ async def compare_models(request: BeamSearchRequest):
         # 并发生成两个模型的结果
         results = {}
         
-        # DeepSeek模拟结果
-        if generator:
+        # 本地 DeepSeek R1 结果
+        if local_deepseek_generator:
             try:
-                deepseek_result = generator.generate_reasoning_beam_search(
+                print("🤖 Generating with Local DeepSeek R1...")
+                local_result = await local_deepseek_generator.generate_reasoning_beam_search(
                     question=question,
                     beam_width=request.beam_width,
-                    max_depth=5
+                    max_depth=5,
+                    force_api=request.force_api
                 )
-                results["DeepSeek-R1"] = {
+                results["Local-DeepSeek-R1"] = {
                     "success": True,
-                    "model": "DeepSeek-R1",
-                    "problem": deepseek_result.problem,
-                    "beam_tree": deepseek_result.beam_tree,
-                    "paths": deepseek_result.paths,
+                    "model": "Local-DeepSeek-R1",
+                    "problem": local_result.problem,
+                    "beam_tree": local_result.beam_tree,
+                    "paths": local_result.paths,
                     "model_info": {
-                        "name": "DeepSeek R1",
-                        "type": "simulated",
-                        "reasoning_source": "pattern_based"
+                        "name": "Local DeepSeek R1",
+                        "type": "local_model",
+                        "gpu_accelerated": True,
+                        "reasoning_source": local_result.problem.get("reasoning_source", "local_deepseek_r1")
                     }
                 }
+                print("✅ Local DeepSeek R1 completed")
             except Exception as e:
-                results["DeepSeek-R1"] = {
+                print(f"❌ Local DeepSeek R1 failed: {e}")
+                results["Local-DeepSeek-R1"] = {
                     "success": False,
                     "error": str(e),
-                    "model": "DeepSeek-R1"
+                    "model": "Local-DeepSeek-R1"
                 }
         else:
-            results["DeepSeek-R1"] = {
+            results["Local-DeepSeek-R1"] = {
                 "success": False,
-                "error": "DeepSeek generator not available",
-                "model": "DeepSeek-R1"
+                "error": "Local DeepSeek R1 generator not available",
+                "model": "Local-DeepSeek-R1"
             }
         
-        # O1真实结果  
+        # O1 真实结果  
         o1_available = False
         if o1_client:
             try:
@@ -335,9 +414,12 @@ async def compare_models(request: BeamSearchRequest):
         
         if o1_available:
             try:
+                print("🧠 Generating with O1...")
                 o1_result = await o1_client.generate_reasoning(question, max_tokens=3000)
                 results["O1"] = o1_result
+                print("✅ O1 completed")
             except Exception as e:
+                print(f"❌ O1 failed: {e}")
                 results["O1"] = {
                     "success": False,
                     "error": str(e),
@@ -369,7 +451,42 @@ async def compare_models(request: BeamSearchRequest):
         raise
     except Exception as e:
         print(f"Comparison error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/load_model")
+async def load_local_model():
+    """手动加载本地 DeepSeek 模型"""
+    if not local_deepseek_generator:
+        raise HTTPException(status_code=503, detail="Local DeepSeek generator not available")
+    
+    try:
+        status = local_deepseek_generator.get_status()
+        if status.get("local_engine_loaded", False):
+            return {
+                "message": "Model already loaded",
+                "status": status
+            }
+        
+        if not status.get("local_engine_available", False):
+            raise HTTPException(status_code=503, detail="Local engine not available")
+        
+        # 触发模型加载
+        print("📥 Manually loading DeepSeek R1 model...")
+        if local_deepseek_generator.local_engine and not local_deepseek_generator.local_engine.is_loaded:
+            success = local_deepseek_generator.local_engine.load_model()
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to load model")
+        
+        new_status = local_deepseek_generator.get_status()
+        return {
+            "message": "Model loaded successfully",
+            "status": new_status
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model loading failed: {str(e)}")
 
 def analyze_model_comparison(results: Dict[str, Any]) -> Dict[str, Any]:
     """分析模型对比结果"""
